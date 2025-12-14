@@ -10,6 +10,7 @@ export default function Home(){
   const [codec,setCodec] = useState(CODECS[0])
   const [selected, setSelected] = useState<string[]>([...CODECS])
   const [results,setResults] = useState<any[]>([])
+  const [allVariants, setAllVariants] = useState<any[]>([])
   const [loading,setLoading] = useState(false)
   const [progress, setProgress] = useState(0)
 
@@ -42,21 +43,42 @@ export default function Home(){
       }, 600)
       const res = await fetch('/api/analyze', { method:'POST', body: fd })
       clearInterval(progressTimer)
-      setProgress(98)
-      // defensively handle non-JSON responses (HTML error pages from dev server can appear)
-      const ct = res.headers.get('content-type') || ''
-      let data: any = null
-      if (ct.includes('application/json')) {
-        data = await res.json()
+      setProgress(5)
+      // expect a 202 with jobId for background simulation
+      const data = await res.json()
+      if(res.status === 202 && data.jobId){
+        // poll job status until finished
+        const jobId = data.jobId
+        setInfo(data.info || null)
+        const poll = setInterval(async ()=>{
+          try{
+            const r = await fetch(`/api/job/${jobId}`)
+            const j = await r.json()
+            setProgress(j.progress || 0)
+            if(j.logs && j.logs.length>0) setInfo((prev:any)=> ({...prev, logs: j.logs}))
+            if(j.status === 'finished'){
+              clearInterval(poll)
+              setResults(j.results || [])
+              setProgress(100)
+              setTimeout(()=>setProgress(0), 600)
+              setLoading(false)
+            }
+            if(j.status === 'failed'){
+              clearInterval(poll)
+              setError('Processing failed; check server logs')
+              setLoading(false)
+            }
+          }catch(e:any){ clearInterval(poll); setError('Failed to poll job status'); setLoading(false) }
+        }, 1000)
       } else {
-        const text = await res.text()
-        // server returned HTML (likely an error page) or plain text
-        const snippet = text && text.length > 0 ? text.slice(0, 800) : '<empty response>'
-        throw new Error(`Server returned non-JSON response (status ${res.status}): ${snippet}`)
+        if(!res.ok) throw new Error(data?.error || 'Analyze failed')
+        // fallback: immediate analysis returned
+        setInfo(data)
+        setResults(data.variants || [])
+        setAllVariants(data.allVariants || [])
+        setProgress(100)
+        setTimeout(()=>setProgress(0), 800)
       }
-      if(!res.ok){ throw new Error(data?.error || 'Analyze failed') }
-      setInfo(data)
-      setResults(data.variants || [])
       // finish progress
       setProgress(100)
       setTimeout(()=>{ setProgress(0) }, 800)
@@ -64,7 +86,7 @@ export default function Home(){
       // Friendly messages for common cases
       const msg = e?.message || String(e)
       if(msg.includes('Server returned non-JSON')){
-        setError('Server error: received unexpected HTML response. Check the dev server logs or try restarting (`npm run dev`).')
+        setError('Server error: received unexpected HTML response (possible platform timeout). Try again later or contact the site owner.')
       } else if(msg.includes('Failed to fetch') || msg.includes('Could not connect')){
         setError('Unable to reach server. Is `npm run dev` running?')
       } else {
@@ -74,12 +96,11 @@ export default function Home(){
     }finally{ setLoading(false) }
   }
   const CODEC_NAMES: Record<string,string> = { libx264: 'H.264 (x264)', libx265: 'H.265 (x265)', 'libvpx-vp9':'VP9', 'libaom-av1':'AV1' }
+  const displayResults = selected && selected.length>0 ? selected.map(c=> results.find(r=>r.codec===c) || allVariants.find(a=>a.codec===c) || { codec: c }) : results
 
   return (
     <div className="container">
-            {process.env.NEXT_PUBLIC_SIMULATE_LOAD === 'true' && (
-              <div style={{marginTop:6,color:'#f6c35a',fontWeight:600}}>Demo mode: simulated server load enabled</div>
-            )}
+            {/* Simulation runs automatically in development; no banner shown to keep UI clean */}
       <div className="hero">
         <div>
           <h1>FFmpeg Encoder Comparator</h1>
@@ -120,7 +141,8 @@ export default function Home(){
               <div>
                 <div className="frames-grid">
                         {frames.map((img,idx)=>{
-                    const variant = results[idx] || results[idx % Math.max(1,results.length)] || { codec: CODECS[idx] }
+                    const displayResults = selected && selected.length>0 ? selected.map(c=> results.find(r=>r.codec===c) || allVariants.find(a=>a.codec===c) || { codec: c }) : results
+                    const variant = displayResults[idx] || displayResults[idx % Math.max(1,displayResults.length)] || { codec: CODECS[idx] }
                     return (
                       <div key={idx} className="frame-card">
                         <div className="codec-heading">{CODEC_NAMES[variant.codec] || variant.codec}</div>
@@ -136,46 +158,73 @@ export default function Home(){
                   })}
                 </div>
                 <div className="chart-table" style={{marginTop:12}}>
-                  {results && results.length>0 ? (
-                    <table style={{width:'100%',borderCollapse:'collapse'}}>
-                      <thead>
-                        <tr>
-                          <th style={{textAlign:'left'}}>Metric</th>
-                          {results.map((r:any, i:number)=>(<th key={i} style={{textAlign:'center'}}>{r.codec}</th>))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {[
-                          {k:'bitrate', label:'Bitrate'},
-                          {k:'psnr', label:'PSNR'},
-                          {k:'ssim', label:'SSIM'},
-                          {k:'vmaf', label:'VMAF'},
-                          {k:'playbackPerf', label:'Playback Performance'},
-                          {k:'hdr', label:'HDR Available'},
-                          {k:'colorfulness', label:'Colorfulness'},
-                          {k:'motion', label:'Motion'},
-                          {k:'chromaVariance', label:'Chroma Variance'},
-                          {k:'sharpness', label:'Sharpness'},
-                          {k:'entropy', label:'Entropy'},
-                          {k:'recommendation', label:'Best Use Case'},
-                        ].map((m:any)=>(
-                          <tr key={m.k}>
-                            <td style={{padding:'6px 8px',color:'var(--muted)'}}>{m.label}</td>
-                            {results.map((r:any, i:number)=>{
-                              let val: any = r[m.k] ?? r[m.k==='bitrate' ? 'bitrateEstimate' : m.k]
-                              if(m.k==='bitrate'){
-                                // show kbps if possible
-                                if(info && info.duration && info.duration>0){ val = Math.round((r.bitrateEstimate / info.duration) / 1000) + ' kbps' }
-                                else { val = Math.round(r.bitrateEstimate/1000) + ' kbps' }
-                              }
-                              if(m.k==='hdr') val = r.hdr ? 'Yes' : 'No'
-                              if(m.k==='recommendation') val = r.recommendation
-                              return (<td key={i} style={{textAlign:'center',padding:'6px 8px'}}>{String(val)}</td>)
-                            })}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                  { (selected && selected.length>0) || (results && results.length>0) ? (
+                    (()=>{
+                      const displayResults = selected && selected.length>0 ? selected.map(c=> results.find(r=>r.codec===c) || allVariants.find(a=>a.codec===c) || { codec: c }) : results
+                      const singleCompare = displayResults.length===1
+                      const metricList = [
+                        {k:'bitrate', label:'Bitrate'},
+                        {k:'psnr', label:'PSNR'},
+                        {k:'ssim', label:'SSIM'},
+                        {k:'vmaf', label:'VMAF'},
+                        {k:'playbackPerf', label:'Playback Performance'},
+                        {k:'hdr', label:'HDR Available'},
+                        {k:'colorfulness', label:'Colorfulness'},
+                        {k:'motion', label:'Motion'},
+                        {k:'chromaVariance', label:'Chroma Variance'},
+                        {k:'sharpness', label:'Sharpness'},
+                        {k:'entropy', label:'Entropy'},
+                        {k:'recommendation', label:'Best Use Case'},
+                      ]
+                      function sourceVal(mk:string){
+                        if(!info) return '—'
+                        if(mk==='bitrate'){
+                          if(info.duration && info.duration>0) return Math.round((info.sizeBytes*8) / info.duration / 1000) + ' kbps'
+                          return Math.round(info.sizeBytes/1024/1024) + ' MB'
+                        }
+                        if(mk==='hdr') return info.hdr ? 'Yes' : 'No'
+                        if(mk==='recommendation') return 'Original'
+                        // use frameMetrics proxies for colorfulness/motion/sharpness/entropy
+                        if(frameMetrics && frameMetrics.length>0){
+                          const avg = (arr:any[])=> arr.reduce((s,n)=>s+n,0)/arr.length
+                          if(mk==='colorfulness') return Math.round(avg(frameMetrics.map(f=>f.lumaVariance)))
+                          if(mk==='motion') return Math.round(frameMetrics.reduce((s,f,i,arr)=> i===0?0:s+Math.abs(f.lumaVariance - arr[i-1].lumaVariance),0) / Math.max(1,frameMetrics.length-1))
+                          if(mk==='chromaVariance') return Math.round(avg(frameMetrics.map(f=>f.lumaVariance/2)))
+                          if(mk==='sharpness') return Math.round(avg(frameMetrics.map(f=>f.edgeEnergy))*10)
+                          if(mk==='entropy') return Math.round(avg(frameMetrics.map(f=>f.colorEntropy)))
+                        }
+                        return '—'
+                      }
+                      return (
+                        <table style={{width:'100%',borderCollapse:'collapse'}}>
+                          <thead>
+                            <tr>
+                              <th style={{textAlign:'left'}}>{singleCompare ? 'Metric / Source' : 'Metric'}</th>
+                              {singleCompare && <th style={{textAlign:'center'}}>Source</th>}
+                              {displayResults.map((r:any, i:number)=>(<th key={i} style={{textAlign:'center'}}>{r.codec}</th>))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {metricList.map((m:any)=>(
+                              <tr key={m.k}>
+                                <td style={{padding:'6px 8px',color:'var(--muted)'}}>{m.label}</td>
+                                {singleCompare && <td style={{textAlign:'center',padding:'6px 8px'}}>{String(sourceVal(m.k))}</td>}
+                                {displayResults.map((r:any, i:number)=>{
+                                  let val: any = r[m.k] ?? r[m.k==='bitrate' ? 'bitrateEstimate' : m.k]
+                                  if(m.k==='bitrate'){
+                                    if(r.bitrateEstimate && info && info.duration && info.duration>0){ val = Math.round((r.bitrateEstimate / info.duration) / 1000) + ' kbps' }
+                                    else if(r.bitrateEstimate) { val = Math.round(r.bitrateEstimate/1000) + ' kbps' }
+                                  }
+                                  if(m.k==='hdr') val = r.hdr ? 'Yes' : 'No'
+                                  if(m.k==='recommendation') val = r.recommendation
+                                  return (<td key={i} style={{textAlign:'center',padding:'6px 8px'}}>{String(val)}</td>)
+                                })}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )
+                    })()
                   ) : <div className="muted">No variants to compare</div>}
                 </div>
                 <div className="card" style={{marginTop:12}}>
@@ -207,7 +256,7 @@ export default function Home(){
           <OptionsPanel codec={codec} onCodec={(c:string)=>setCodec(c as any)} selected={selected} onToggle={(c)=>{
             setSelected(prev => prev.includes(c) ? prev.filter(x=>x!==c) : [...prev,c])
           }} />
-          <Results items={results} />
+          <Results items={displayResults} />
         </div>
       </div>
     </div>

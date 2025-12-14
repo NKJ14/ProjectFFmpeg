@@ -43,7 +43,14 @@ Notes:
 Deployment notes:
 - This project runs `ffmpeg` and writes temporary files; serverless platforms (like Vercel serverless functions) may not provide the required binary environment, ephemeral filesystem characteristics, or time budget for real encodes. The app uses `ffmpeg-static` which provides a binary, but compatibility is not guaranteed on Vercel.
 - For production-ready encoding or heavy processing, consider deploying a dedicated server (Docker or VM) that runs the analyzer and encoder, or use an external encoding service. Alternatively, disable real processing and rely on the deterministic estimator if you must host on Vercel.
-- To demo server load and latency locally, the API supports simulated delays and overload responses controlled by the `SIMULATE_LOAD` environment variable (default: enabled in non-production). For demo deployments on Vercel, set `SIMULATE_LOAD=true` and `NEXT_PUBLIC_SIMULATE_LOAD=true` in your Vercel Environment Variables so the UI and server both run in simulated/demo mode. To attempt real probing/encoding on a server, set `SIMULATE_LOAD=false` (ensure your host supports `ffmpeg-static` and has adequate execution time).
+- To demo server load and latency locally, the API supports simulated delays and overload responses controlled by the `SIMULATE_LOAD` environment variable. In development, simulation runs by default when `SIMULATE_LOAD` is not set so `npm run dev` shows the delayed/503 behavior; set `SIMULATE_LOAD=false` to turn it off locally. Be careful enabling simulation on serverless platforms (like Vercel) — long artificial delays can cause platform timeouts and result in HTML error pages instead of JSON. Only enable `SIMULATE_LOAD` in production if you understand the platform limits; prefer enabling it in staging or local testing.
+
+  Quick local run with simulated delays/errors:
+
+  ```bash
+  npm run dev:sim
+  # opens http://localhost:3000 with SIMULATE_LOAD=true and NEXT_PUBLIC_SIMULATE_LOAD=true
+  ```
 
 Deploying to Vercel
 -------------------
@@ -58,11 +65,14 @@ vercel login
 2. Add recommended environment variables in the Vercel dashboard (Project Settings -> Environment Variables) or via CLI for `production` (recommended for demo):
 
 ```bash
+# If you want to demo simulated server load in a non-production environment, set these
+# in your staging project or .env.local. Avoid enabling simulated delays in production
+# unless you have adjusted platform limits or host it somewhere with longer timeouts.
 vercel env add SIMULATE_LOAD production
 vercel env add NEXT_PUBLIC_SIMULATE_LOAD production
 ```
 
-When prompted, set both variables to `true` for a demo-mode deployment that avoids running native `ffmpeg` in a serverless environment.
+When prompted, set the variables to `true` only for staging/demo projects. For production use `SIMULATE_LOAD=false` (or leave unset) and ensure your host supports `ffmpeg-static` and longer execution times.
 
 3. Deploy:
 
@@ -82,8 +92,8 @@ Use one of these methods to set the two demo variables. For demo deployments set
 
 - Vercel dashboard (quick):
 
-  * Key: `SIMULATE_LOAD`  Value: `true`  Environment: `Production`
-  * Key: `NEXT_PUBLIC_SIMULATE_LOAD`  Value: `true`  Environment: `Production`
+  * Key: `SIMULATE_LOAD`  Value: `true`  Environment: `Staging (recommended)`
+  * Key: `NEXT_PUBLIC_SIMULATE_LOAD`  Value: `true`  Environment: `Staging (recommended)`
 
 - Vercel CLI (interactive): run these and enter the values when prompted:
 
@@ -95,6 +105,7 @@ vercel env add NEXT_PUBLIC_SIMULATE_LOAD production
 - Local development (`.env.local` copy/paste):
 
 ```env
+# Only use these locally or in a staging/demo environment.
 SIMULATE_LOAD=true
 NEXT_PUBLIC_SIMULATE_LOAD=true
 ```
