@@ -1,7 +1,7 @@
 {
   "version": 2,
   "functions": {
-    "api/analyze.{js,ts}": {
+    "api/analyze": {
       "memory": 1024,
       "maxDuration": 60
     }
