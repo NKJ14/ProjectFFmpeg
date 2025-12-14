@@ -1,0 +1,12 @@
+{
+  "version": 2,
+  "builds": [
+    { "src": "package.json", "use": "@vercel/next" }
+  ],
+  "functions": {
+    "api/analyze.{js,ts}": {
+      "memory": 1024,
+      "maxDuration": 60
+    }
+  }
+}

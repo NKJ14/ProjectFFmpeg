@@ -14,7 +14,7 @@ export function encodeSample(input:string, output:string, codec='libx264', crf=2
       .videoCodec(codec)
       .outputOptions(['-crf '+crf, '-preset fast'])
       .on('end', ()=> resolve(output))
-      .on('error', (e)=> reject(e))
+      .on('error', (e:any)=> reject(e))
       .save(output)
   })
 }

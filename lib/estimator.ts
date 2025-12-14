@@ -3,8 +3,9 @@ import ffmpegPath from 'ffmpeg-static'
 let ffprobePath: string | undefined
 try{
   // optional: try to use ffprobe-static if available
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const fp = require('ffprobe-static')
+  // use eval('require') to avoid bundlers statically resolving this optional dep
+  // eslint-disable-next-line @typescript-eslint/no-implied-eval
+  const fp = eval("require")('ffprobe-static')
   ffprobePath = fp && fp.path
 }catch(e){ ffprobePath = undefined }
 import os from 'os'
@@ -18,7 +19,7 @@ if(ffprobePath) ffmpeg.setFfprobePath(ffprobePath)
 
 async function ffprobe(file:string):Promise<any>{
   return new Promise((resolve, reject)=>{
-    ffmpeg.ffprobe(file, (err,data)=> err ? reject(err) : resolve(data))
+    ffmpeg.ffprobe(file, (err: any, data: any) => err ? reject(err) : resolve(data))
   })
 }
 
@@ -31,7 +32,7 @@ async function sampleFrames(file:string, count=8){
       .outputOptions(['-vsync 0','-qscale:v 2','-frames:v '+(count)])
       .output(outPattern)
       .on('end', ()=> resolve(null))
-      .on('error', (e)=> reject(e))
+      .on('error', (e: any)=> reject(e))
       .run()
   })
   const files = fs.readdirSync(tmp).filter(f=>f.endsWith('.png')).map(f=>path.join(tmp,f)).sort()
@@ -103,5 +104,21 @@ export function predictVariant(original:{sizeBytes:number,complexity:number}, op
   const codecFactor = opts.codec.includes('av1') ? 0.7 : opts.codec.includes('x265') ? 0.8 : opts.codec.includes('vp9') ? 0.75 : 1
   const sizeEstimate = Math.round(sizeBytes * bitrateFactor * codecFactor * scale)
   const vmaf = Math.round(100 - (complexity*40) / (Math.log2(1 + (28-opts.crf) + 1)))
-  return { sizeEstimate, vmaf }
+  // estimated bitrate (bps) - duration unknown at this layer, caller can divide by duration
+  const bitrateEstimate = Math.round(sizeEstimate * 8) // bytes->bits as base; caller should divide by duration
+  // quality proxies
+  const psnr = Math.round(40 - complexity*8 - (opts.crf-20)*0.6)
+  const ssim = Math.round(100 - complexity*12 - (opts.crf-20)*0.9)
+  const playbackPerf = Math.round(100 - (opts.crf-18)*3 - (codecFactor<0.8 ? 5 : 0) )
+  const hdr = false
+  const recommendation = opts.codec.includes('av1') ? 'Archival / Highest quality (slow)' : opts.codec.includes('x265') ? 'High-efficiency uploads, streaming' : opts.codec.includes('vp9') ? 'Browser-friendly web streaming' : 'Good general-purpose (YouTube, social)'
+
+  // additional alphanumeric metrics (deterministic proxies)
+  const colorfulness = Math.round(10 + complexity * 40 - (opts.crf-20)*0.5)
+  const motion = Math.round(complexity * 100)
+  const chromaVariance = Math.round(complexity * 80)
+  const sharpness = Math.round(50 + (28-opts.crf) * 1.2 - complexity * 10)
+  const entropy = Math.round(10 + complexity * 20)
+
+  return { sizeEstimate, vmaf, psnr, ssim, bitrateEstimate, playbackPerf, hdr, recommendation, colorfulness, motion, chromaVariance, sharpness, entropy }
 }

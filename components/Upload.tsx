@@ -10,7 +10,7 @@ export default function Upload({ onUpload }: Props) {
     setError(null)
     if (!file) return false
     if (file.type !== 'video/mp4') { setError('Only MP4 files are allowed'); return false }
-    if (file.size > 200 * 1024 * 1024) { setError('File too large (max 200MB)'); return false }
+    if (file.size > 20 * 1024 * 1024) { setError('File too large (max 20MB)'); return false }
     return true
   }, [])
 
@@ -31,13 +31,17 @@ export default function Upload({ onUpload }: Props) {
     <div className="card">
       <h3>Upload source video</h3>
       <p className="muted">Only MP4 accepted. Max 200MB.</p>
-      <div onDrop={onDrop} onDragOver={(e)=>e.preventDefault()} style={{marginTop:12, border:'2px dashed rgba(255,255,255,0.04)', padding:12, borderRadius:8}}>
+      <div className="dropzone" onDrop={onDrop} onDragOver={(e)=>e.preventDefault()} style={{marginTop:12}}>
         <input
           ref={ref}
           type="file"
           accept="video/mp4"
           onChange={onChange}
         />
+        <div>
+          <div className="file-name">Choose File</div>
+          <div className="small muted">Drag & drop, or click to browse</div>
+        </div>
         {error && <div style={{color:'#ffb4b4',marginTop:8}}>{error}</div>}
       </div>
     </div>
