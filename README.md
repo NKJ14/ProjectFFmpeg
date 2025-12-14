@@ -73,7 +73,33 @@ vercel --prod
 
 4. After deployment, test uploads with small MP4s (<= 20MB). If you want real `ffmpeg` runs on your deployment, set `SIMULATE_LOAD=false` and make sure the platform supports `ffmpeg-static` and longer execution times (Vercel serverless functions have time limits).
 
-Note: The included `vercel.json` increases the function `memory` and `maxDuration` hints for `api/analyze`, but actual limits depend on your Vercel plan.
+Note: I previously tried adding function resource hints in `vercel.json`, but Vercel reported unmatched pattern errors during build for some configurations. These hints were removed to ensure the project builds reliably. To increase function memory/time, use the Vercel dashboard or select an appropriate plan for heavier workloads.
+
+Copy-paste env variables
+------------------------
+
+Use one of these methods to set the two demo variables. For demo deployments set both to `true`.
+
+- Vercel dashboard (quick):
+
+  * Key: `SIMULATE_LOAD`  Value: `true`  Environment: `Production`
+  * Key: `NEXT_PUBLIC_SIMULATE_LOAD`  Value: `true`  Environment: `Production`
+
+- Vercel CLI (interactive): run these and enter the values when prompted:
+
+```bash
+vercel env add SIMULATE_LOAD production
+vercel env add NEXT_PUBLIC_SIMULATE_LOAD production
+```
+
+- Local development (`.env.local` copy/paste):
+
+```env
+SIMULATE_LOAD=true
+NEXT_PUBLIC_SIMULATE_LOAD=true
+```
+
+To disable simulated/demo behavior in production, set the values to `false`.
 
 Quick tips to make workflow easier:
 - Use `npm run dev` to start the app locally.
